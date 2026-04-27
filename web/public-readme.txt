@@ -1,0 +1,1 @@
+Place icon images under /web/public/icons/ (icon-192.png, icon-512.png).

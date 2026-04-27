@@ -1,0 +1,22 @@
+{
+  "name": "WarmStore - Offline Shopping",
+  "short_name": "WarmStore",
+  "description": "Offline-first PWA storefront built with React + Node.js",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fff8f4",
+  "theme_color": "#ff955a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

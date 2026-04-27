@@ -1,0 +1,18 @@
+﻿Fixed copy created from: C:\Users\bhard\Desktop\pwa-storefront-ui-warm
+
+What was changed:
+- api/.env and api/.env.example set to use mongodb://localhost:27017/pwa_store
+- api/package.json updated to include nodemon devDependency
+- web/package.json devDependencies updated to include @vitejs/plugin-react ^5.0.0 (compatible with vite 5)
+- Placeholder icons added to web/public/icons to suppress manifest warnings
+- run-all-windows-fixed.ps1 added for robust local startup (installs deps, seeds DB, waits for API health)
+
+How to run:
+1) Ensure MongoDB is available on localhost:27017
+   - Install MongoDB locally (winget or download) and run "net start MongoDB"
+   - OR use Atlas and update api\.env to your Atlas connection string
+2) In PowerShell (from the new fixed folder):
+   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+   .\run-all-windows-fixed.ps1
+
+If you want, compress the folder manually to a ZIP file for transfer.
