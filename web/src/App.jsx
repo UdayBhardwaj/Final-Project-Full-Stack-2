@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import "./styles.css";
 import { enqueueOrder } from './idb-queue';
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
 export default function App() {
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
@@ -10,9 +12,6 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [showCart, setShowCart] = useState(false);
 
-
-
-  // ✅ Load persisted data
   useEffect(() => {
     const storedCart = localStorage.getItem("cart");
     if (storedCart) setCart(JSON.parse(storedCart));
@@ -26,7 +25,7 @@ export default function App() {
 
     async function loadProducts() {
       try {
-        const res = await fetch("http://localhost:4000/api/products");
+        const res = await fetch(`${API}/api/products`);
         const data = await res.json();
         setProducts(data.data || []);
       } catch (err) {
@@ -43,22 +42,19 @@ export default function App() {
     };
   }, []);
 
-  // ✅ Persist cart
   useEffect(() => {
     localStorage.setItem("cart", JSON.stringify(cart));
   }, [cart]);
 
-  // ✅ Persist user
   useEffect(() => {
     if (user) localStorage.setItem("user", JSON.stringify(user));
   }, [user]);
 
-  // ✅ Login
   async function loginDemo() {
-    const name = prompt("Enter your name to log in:", user?.name || "Uday");
+    const name = prompt("Enter your name to log in:", user?.name || "");
     if (!name) return;
     try {
-      const res = await fetch("http://localhost:4000/api/auth/login", {
+      const res = await fetch(`${API}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: name }),
@@ -67,68 +63,89 @@ export default function App() {
       const data = await res.json();
       localStorage.setItem("token", data.token);
       setUser(data.user);
-      showToast(`Welcome, ${data.user.name}! 🎉`);
+      showToast(`Welcome, ${data.user.name}!`);
     } catch (err) {
       console.error("Login error:", err);
       alert("Login failed — check if API is running.");
     }
   }
 
-  // ✅ Logout
   function logout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setUser(null);
-    showToast("You’ve been logged out 👋");
+    showToast("You've been logged out");
   }
 
-  // ✅ Cart management
   function addToCart(p) {
-    setCart((prev) => [...prev, p]);
-    showToast(`${p.name} added to cart 🛒`);
+    setCart((prev) => {
+      const existing = prev.findIndex(i => i.sku === p.sku);
+      if (existing >= 0) {
+        const updated = [...prev];
+        updated[existing] = { ...updated[existing], qty: (updated[existing].qty || 1) + 1 };
+        return updated;
+      }
+      return [...prev, { ...p, qty: 1 }];
+    });
+    showToast(`${p.name} added to cart`);
   }
 
-  function removeFromCart(index) {
-    setCart((prev) => prev.filter((_, i) => i !== index));
+  function removeFromCart(sku) {
+    setCart((prev) => prev.filter(i => i.sku !== sku));
+  }
+
+  function cartTotal() {
+    return cart.reduce((a, b) => a + b.price * (b.qty || 1), 0);
+  }
+
+  function cartCount() {
+    return cart.reduce((a, b) => a + (b.qty || 1), 0);
   }
 
   async function checkout() {
-  const token = localStorage.getItem('token');
-  if (!token) { showToast('Please log in first!'); return; }
+    const token = localStorage.getItem('token');
+    if (!token) { showToast('Please log in first!'); return; }
+    if (cart.length === 0) { showToast('Your cart is empty!'); return; }
 
-  const order = {
-    items: cart.map(p => ({ sku: p.sku, quantity: 1, price: p.price })),
-    totalAmount: cart.reduce((a,b)=>a+b.price,0),
-    clientOrderId: 'co-' + Date.now()
-  };
+    const order = {
+      items: cart.map(p => ({ sku: p.sku, quantity: p.qty || 1 })),
+      totalAmount: cartTotal(),
+      clientOrderId: crypto.randomUUID(),
+    };
 
-  try {
-    const res = await fetch('http://localhost:4000/api/orders', {
-      method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(order)
-    });
-    if (res.ok) {
-      showToast('🎉 Checkout successful!');
-      setCart([]);
-      localStorage.removeItem('cart');
-      return;
-    }
-    throw new Error('Server rejected');
-  } catch (err) {
-    await enqueueOrder(order, token);
-    showToast('Offline — order saved for later sync.');
-    if ('serviceWorker' in navigator && 'SyncManager' in window) {
-      const reg = await navigator.serviceWorker.ready;
-      try { await reg.sync.register('sync-orders'); } catch(e){ console.warn('Sync registration failed', e); }
+    try {
+      const res = await fetch(`${API}/api/orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(order),
+      });
+      if (res.ok) {
+        showToast('Order placed successfully!');
+        setCart([]);
+        localStorage.removeItem('cart');
+        setShowCart(false);
+        return;
+      }
+      const err = await res.json();
+      if (res.status === 409 && err.conflicts) {
+        const msg = err.conflicts.map(c => `${c.sku}: ${c.reason}`).join(', ');
+        showToast(`Order issue: ${msg}`);
+        return;
+      }
+      throw new Error('Server rejected order');
+    } catch (err) {
+      await enqueueOrder(order, token, API);
+      showToast('Offline — order saved, will sync when back online');
+      if ('serviceWorker' in navigator && 'SyncManager' in window) {
+        const reg = await navigator.serviceWorker.ready;
+        try { await reg.sync.register('sync-orders'); } catch (e) { console.warn('Sync reg failed', e); }
+      }
     }
   }
-}
 
-  // Toast popup
   function showToast(msg) {
     const t = document.createElement("div");
     t.className = "toast";
@@ -145,29 +162,25 @@ export default function App() {
     <div className="app-wrapper">
       <header className="app-header">
         <div className="brand">
-          <h1>☀️ OfflineStore</h1>
-          <p>Offline-first shopping with a smile 😄</p>
+          <h1>OfflineStore</h1>
+          <p>Offline-first shopping</p>
         </div>
         <div className="controls">
           <span className={online ? "status online" : "status offline"}>
-            {online ? "🟢 Online" : "🔴 Offline"}
+            {online ? "Online" : "Offline"}
           </span>
 
           {!user ? (
-            <button onClick={loginDemo} className="btn login">
-              Login
-            </button>
+            <button onClick={loginDemo} className="btn login">Login</button>
           ) : (
             <>
-              <button onClick={logout} className="btn logout">
-                Logout
-              </button>
-              <span className="user-tag">👋 {user.name}</span>
+              <span className="user-tag">{user.name}</span>
+              <button onClick={logout} className="btn logout">Logout</button>
             </>
           )}
 
           <button onClick={() => setShowCart((v) => !v)} className="btn cart">
-            🛒 Cart ({cart.length})
+            Cart ({cartCount()})
           </button>
         </div>
       </header>
@@ -175,24 +188,31 @@ export default function App() {
       <main>
         {loading ? (
           <div className="loading">Loading products...</div>
+        ) : products.length === 0 ? (
+          <div className="loading">No products found. Make sure the API is running and seeded.</div>
         ) : (
           <div className="grid">
             {products.map((p) => (
               <div key={p._id} className="card">
                 <img
-                  src={`http://localhost:4000${p.images?.[0]}`}
+                  src={p.images?.[0] ? `${API}${p.images[0]}` : `${API}/assets/tshirt.jpg`}
                   alt={p.name}
                   className="card-img"
+                  onError={(e) => { e.target.style.display = 'none'; }}
                 />
                 <div className="card-info">
                   <h3>{p.name}</h3>
                   <p className="desc">{p.description}</p>
                   <div className="price-line">
                     <span className="price">₹{p.price}</span>
-                    <span className="stock">Stock: {p.stock}</span>
+                    <span className="stock">{p.stock > 0 ? `Stock: ${p.stock}` : 'Out of stock'}</span>
                   </div>
-                  <button className="btn add" onClick={() => addToCart(p)}>
-                    Add to cart
+                  <button
+                    className="btn add"
+                    onClick={() => addToCart(p)}
+                    disabled={p.stock === 0}
+                  >
+                    {p.stock === 0 ? 'Out of stock' : 'Add to cart'}
                   </button>
                 </div>
               </div>
@@ -201,42 +221,28 @@ export default function App() {
         )}
       </main>
 
-      {/* 🛒 CART PANEL */}
       {showCart && (
         <div className="cart-panel">
           <div className="cart-header">
-            <h2>🛍️ Your Cart</h2>
-            <button className="close-btn" onClick={() => setShowCart(false)}>
-              ✖
-            </button>
+            <h2>Your Cart</h2>
+            <button className="close-btn" onClick={() => setShowCart(false)}>✖</button>
           </div>
           {cart.length === 0 ? (
             <p className="empty-cart">Your cart is empty!</p>
           ) : (
             <>
               <ul className="cart-list">
-                {cart.map((item, i) => (
-                  <li key={i}>
-                    <span>{item.name}</span>
-                    <span>₹{item.price}</span>
-                    <button
-                      className="remove-btn"
-                      onClick={() => removeFromCart(i)}
-                    >
-                      ❌
-                    </button>
+                {cart.map((item) => (
+                  <li key={item.sku}>
+                    <span>{item.name} {item.qty > 1 ? `×${item.qty}` : ''}</span>
+                    <span>₹{item.price * (item.qty || 1)}</span>
+                    <button className="remove-btn" onClick={() => removeFromCart(item.sku)}>✖</button>
                   </li>
                 ))}
               </ul>
               <div className="cart-footer">
-                <p>
-                  <strong>
-                    Total: ₹{cart.reduce((a, b) => a + b.price, 0)}
-                  </strong>
-                </p>
-                <button className="btn checkout" onClick={checkout}>
-                  ✅ Checkout
-                </button>
+                <p><strong>Total: ₹{cartTotal()}</strong></p>
+                <button className="btn checkout" onClick={checkout}>Checkout</button>
               </div>
             </>
           )}
@@ -244,7 +250,7 @@ export default function App() {
       )}
 
       <footer className="footer">
-        <p>Made with ❤️• Offline-ready • PWA demo</p>
+        <p>Offline-ready PWA demo</p>
       </footer>
     </div>
   );

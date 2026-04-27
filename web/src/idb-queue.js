@@ -1,4 +1,3 @@
-// src/idb-queue.js
 import { openDB } from 'idb';
 
 const DB_NAME = 'warmstore';
@@ -15,9 +14,9 @@ export async function getDB() {
   });
 }
 
-export async function enqueueOrder(order, token = '') {
+export async function enqueueOrder(order, token = '', apiUrl = '') {
   const db = await getDB();
-  await db.add(STORE, { data: order, token, createdAt: Date.now() });
+  await db.add(STORE, { data: order, token, apiUrl, createdAt: Date.now() });
 }
 
 export async function getAllOrders() {
