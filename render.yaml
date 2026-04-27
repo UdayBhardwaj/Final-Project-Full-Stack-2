@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: pwa-storefront-api
+    env: node
+    rootDir: api
+    buildCommand: npm install && node seed.js
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false          # Set this manually in Render dashboard (MongoDB Atlas URI)
+      - key: JWT_SECRET
+        generateValue: true  # Render auto-generates a secure random value
